@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__desktop-commander__read_file",
+      "mcp__web-search-prime__webSearchPrime"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

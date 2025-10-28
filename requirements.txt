@@ -1,0 +1,24 @@
+# Python dependencies for AITrade_MT5 project
+# Add your project dependencies below
+
+# MetaTrader 5 API
+MetaTrader5
+
+# Logging and utilities
+# Note: logging is part of Python standard library, no additional package needed
+
+# Data analysis
+pandas
+
+# YAML configuration support
+PyYAML
+
+# Timezone support
+pytz
+
+# OpenAI API
+openai
+
+# Example dependencies:
+# requests==2.31.0
+# numpy==1.24.3
