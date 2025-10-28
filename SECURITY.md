@@ -25,7 +25,6 @@ cp AITrade_MT5/config.yaml.example AITrade_MT5/config.yaml
 - `base_url`: 您的AI服务商API地址
 - `api_key`: 您的真实API密钥（格式：sk-xxxxxxxxx）
 - `model_id`: AI模型名称
-- `mt5_account`（可选）: MT5账户信息
 
 ### 3. 配置文件示例
 
@@ -35,6 +34,8 @@ ai:
   api_key: "sk-YOUR_REAL_API_KEY_HERE"
   model_id: "gpt-4"
 ```
+
+**注意**: MT5账户信息需要在MetaTrader 5终端中手动登录，程序会自动获取已登录账户的信息，无需在配置文件中设置。
 
 ## 🛡️ 安全最佳实践
 

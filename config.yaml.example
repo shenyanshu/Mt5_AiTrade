@@ -35,12 +35,3 @@ ai:
 logging:
   # 日志文件目录
   log_directory: "logs"
-
-# MT5账户配置（可选，也可在程序中设置）
-mt5_account:
-  # 登录账号 - 请替换为您的真实账号
-  login: 12345678
-  # 账户密码 - 请替换为您的真实密码
-  password: "YOUR_PASSWORD_HERE"
-  # 服务器地址 - 请替换为您的经纪商服务器
-  server: "Your-Broker-Server"

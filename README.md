@@ -66,6 +66,63 @@ AITrade_MT5是一个基于Python的MetaTrader 5自动交易系统，通过AI分�
 - ✅ **风险管理**: 内置错误处理和重试机制
 - ✅ **完整日志**: 详细记录所有交易和系统事件
 
+## 支持的交易功能
+
+### 🎯 核心交易操作
+
+- **✅ 开仓功能**
+  - 支持买入(BUY)和卖出(SELL)开仓
+  - 自动计算最优交易手数
+  - 智能设置初始止损止盈
+
+- **✅ 平仓功能**
+  - 支持部分平仓和完全平仓
+  - 根据AI分析信号自动平仓
+  - 紧急平仓保护机制
+
+- **✅ 修改持仓**
+  - 动态修改现有持仓的止损价格
+  - 动态修改现有持仓的止盈价格
+  - 基于市场变化调整风险参数
+
+- **✅ 挂单交易**
+  - 支持买入限价单(BUY LIMIT)
+  - 支持卖出限价单(SELL LIMIT)
+  - 支持买入止损单(BUY STOP)
+  - 支持卖出止损单(SELL STOP)
+  - 自动管理和执行挂单
+
+### 📊 智能管理功能
+
+- **✅ 订单管理**
+  - 实时监控所有活跃订单
+  - 自动识别和分类订单类型
+  - 魔法数字标记系统订单
+
+- **✅ 风险控制**
+  - 自动止损保护
+  - 移动止损策略
+  - 最大持仓数量限制
+  - 资金管理规则
+
+- **✅ 多货币对支持**
+  - 同时监控多个外汇对
+  - 独立分析每个货币对
+  - 分配不同交易策略
+
+## 系统要求
+
+### 必需软件
+- **MetaTrader 5 客户端**: 必须安装并运行 MT5 终端
+- **Python 3.7+**: 运行环境要求
+- **AI服务账户**: 需要有可用的AI API服务
+
+### MT5 设置
+1. 下载并安装 MetaTrader 5 客户端
+2. 开启算法交易权限
+3. 确保终端正常运行并已登录交易账户
+4. 在MT5中启用Python API支持（如需要）
+
 ## 安装和使用
 
 1. **安装依赖**
@@ -74,14 +131,32 @@ AITrade_MT5是一个基于Python的MetaTrader 5自动交易系统，通过AI分�
    ```
 
 2. **配置设置**
-   - 编辑 `config.yaml` 文件
-   - 设置AI服务的API密钥和端点
-   - 配置监控的货币对
+   ```bash
+   # 复制配置模板文件
+   cp config.yaml.example config.yaml
+   
+   # 编辑配置文件，填入真实信息
+   # 设置AI服务的API密钥和端点
+   # 配置监控的货币对
+   # 详细配置说明请参考 SECURITY.md
+   ```
+
+   **重要配置项：**
+   - `ai.api_key`: 您的AI服务API密钥
+   - `ai.base_url`: AI服务端点地址
+   - `ai.model_id`: AI模型名称
+   - `forex_pairs.monitored_pairs`: 监控的货币对列表
+   - `trading.magic_number`: 订单识别魔法数字
 
 3. **运行系统**
    ```bash
    python main.py
    ```
+
+   **运行前检查：**
+   - 确保MetaTrader 5终端正在运行
+   - 已配置好交易账户登录
+   - AI服务配置正确且网络连接正常
 
 ## 技术架构
 
@@ -95,15 +170,28 @@ AITrade_MT5是一个基于Python的MetaTrader 5自动交易系统，通过AI分�
 
 ```
 AITrade_MT5_git/
-├── main.py              # 主程序入口
-├── config.yaml          # 配置文件
-├── requirements.txt     # 依赖包列表
-├── AI/                  # AI分析模块
+├── main.py              # 主程序入口，AI交易循环控制
+├── config.yaml.example  # 配置文件模板（复制为config.yaml使用）
+├── SECURITY.md          # 安全配置指南和最佳实践
+├── requirements.txt     # Python依赖包列表
+├── AI/                  # AI分析引擎
+│   ├── client.py        # AI服务客户端，处理API调用
+│   ├── trading.py       # 交易分析逻辑，处理AI返回结果
+│   ├── prompts.py       # AI提示词管理和数据格式化
+│   ├── realtime_calculator.py  # 实时价格和技术指标计算
+│   └── price_formats.py # 价格数据格式化工具
 ├── MT5/                 # MetaTrader 5接口
-├── config/              # 配置管理
+│   ├── init.py          # MT5连接和初始化
+│   ├── market_info.py   # 市场数据获取和技术指标计算
+│   └── order_info.py    # 订单操作和持仓管理
+├── config/              # 配置管理系统
+│   ├── config_manager.py # 配置文件加载和管理
+│   └── logging_config.py # 日志配置设置
 ├── utils/               # 工具模块
-├── logs/                # 日志文件目录
-└── data/                # 数据存储目录
+│   ├── database.py      # 数据库操作和存储
+│   └── logger.py        # 日志记录器
+├── logs/                # 日志文件目录（运行时生成）
+└── data/                # 数据存储目录（运行时生成）
 ```
 
 ## 注意事项
