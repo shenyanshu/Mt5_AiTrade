@@ -25,7 +25,9 @@ def main():
     # 加载配置文件
     config_manager = get_config_manager()
     magic_number = config_manager.get("trading.magic_number", 100001)
-    app_logger.info(f"加载配置: 魔数 = {magic_number}")
+    ai_analysis_interval = config_manager.get("ai.analysis_interval", 60)
+    ai_retry_interval = config_manager.get("ai.retry_interval", 5)
+    app_logger.info(f"加载配置: 魔数 = {magic_number}, AI分析间隔 = {ai_analysis_interval}秒, 重试间隔 = {ai_retry_interval}秒")
 
     app_logger.info("=== AITrade_MT5 程序启动 ===")
 
@@ -62,9 +64,9 @@ def main():
             from AI.prompts import get_ai_system_prompt
 
             print("\n" + "="*60)
-            print("🚀 AI交易系统已启动")
-            print("⚡ 每分钟自动分析市场并执行交易")
-            print("💰 唯一目标：盈利！盈利！盈利！")
+            print("🚀 AI趋势跟踪交易系统已启动")
+            print(f"⚡ 每{ai_analysis_interval}秒分析市场，捕捉5-30分钟趋势机会")
+            print("💰 策略：精选高质量信号，耐心持仓")
             print("="*60 + "\n")
 
             # 主循环：每分钟执行一次AI分析
@@ -78,15 +80,6 @@ def main():
                     # 获取系统提示词
                     system_prompt = get_ai_system_prompt()
 
-                    # 获取用户提示词（包含最新市场数据）
-                    app_logger.info("正在获取最新市场数据...")
-                    user_prompt = get_user_prompt()
-
-                    if not user_prompt:
-                        app_logger.error("获取市场数据失败，跳过本轮分析")
-                        time.sleep(60)
-                        continue
-
                     # 调用AI分析（带重试机制）
                     analysis_result = None
                     max_retries = 3
@@ -95,7 +88,21 @@ def main():
                     while retry_count < max_retries and analysis_result is None:
                         try:
                             retry_count += 1
+                            data_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             app_logger.info(f"正在进行AI分析尝试 {retry_count}/{max_retries}...")
+                            app_logger.info(f"正在获取最新市场数据 [{data_refresh_time}]...")
+
+                            # 获取用户提示词（包含最新市场数据）- 每次重试都刷新
+                            user_prompt = get_user_prompt()
+
+                            if not user_prompt:
+                                app_logger.error(f"获取市场数据失败 (尝试 {retry_count}/{max_retries})")
+                                if retry_count < max_retries:
+                                    app_logger.info(f"等待{ai_retry_interval}秒后重试...")
+                                    time.sleep(ai_retry_interval)
+                                continue
+
+                            app_logger.info(f"市场数据获取成功 [{data_refresh_time}]")
 
                             # 调用AI分析
                             analysis_result = analyze_market(system_prompt, user_prompt)
@@ -151,19 +158,20 @@ def main():
                         except Exception as analyze_error:
                             app_logger.error(f"AI分析失败 (尝试 {retry_count}/{max_retries}): {analyze_error}")
                             if retry_count < max_retries:
-                                app_logger.info(f"等待 {retry_count * 5} 秒后重试...")
-                                time.sleep(retry_count * 5)  # 递增等待时间
+                                progressive_wait = retry_count * ai_retry_interval
+                                app_logger.info(f"等待 {progressive_wait} 秒后重试...")
+                                time.sleep(progressive_wait)  # 递增等待时间
 
                     if analysis_result is None:
                         app_logger.error(f"AI分析在 {max_retries} 次尝试后仍然失败")
                         print(f"\n❌ AI分析失败，将在下一分钟继续尝试 [{current_time}]")
 
                     app_logger.info(f"=== 第{loop_count}轮AI分析完成 ===")
-                    print(f"\n⏰ 等待下一分钟分析... (当前轮次: {loop_count})")
+                    print(f"\n⏰ 等待{ai_analysis_interval}秒后进行下次分析... (当前轮次: {loop_count})")
                     print("=" * 60 + "\n")
 
-                    # 等待到下一分钟
-                    time.sleep(60)
+                    # 等待配置的间隔时间
+                    time.sleep(ai_analysis_interval)
 
                 except KeyboardInterrupt:
                     app_logger.info("检测到用户中断，正在停止AI交易系统...")
@@ -173,8 +181,8 @@ def main():
                     app_logger.error(f"主循环发生异常: {loop_error}")
                     import traceback
                     app_logger.error(f"详细错误: {traceback.format_exc()}")
-                    print(f"\n⚠️ 系统异常，但将在下一分钟继续运行...")
-                    time.sleep(60)  # 出错后等待一分钟继续
+                    print(f"\n⚠️ 系统异常，但将在{ai_analysis_interval}秒后继续运行...")
+                    time.sleep(ai_analysis_interval)  # 出错后等待配置的间隔时间继续
 
 
         else:
