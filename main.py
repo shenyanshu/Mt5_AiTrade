@@ -11,6 +11,21 @@ from AI.prompts import get_user_prompt
 import MetaTrader5 as mt5
 from datetime import datetime
 import time
+from datetime import timedelta
+import pytz
+
+
+def get_beijing_time():
+    """获取北京时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    return datetime.now(beijing_tz)
+
+
+def format_next_call_time(interval_seconds):
+    """计算并格式化下次调用时间（北京时间）"""
+    now = get_beijing_time()
+    next_time = now + timedelta(seconds=interval_seconds)
+    return next_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def main():
@@ -63,14 +78,34 @@ def main():
             from AI.trading import analyze_market, execute_trading_plan
             from AI.prompts import get_ai_system_prompt
 
+            # 初始化止盈监控系统
+            app_logger.info("=== 初始化止盈监控系统 ===")
+            from AI.position_monitor import start_take_profit_monitoring, stop_take_profit_monitoring, get_monitoring_status
+
+            # 启动止盈监控
+            monitor_started = start_take_profit_monitoring()
+            if monitor_started:
+                app_logger.info("✅ 止盈监控系统启动成功")
+                print("🔍 止盈实时监控已启用 (1秒检测间隔)")
+            else:
+                app_logger.warning("⚠️ 止盈监控系统启动失败或已禁用")
+                print("⚠️ 止盈监控未启用")
+
+            # 显示启动时间（北京时间）
+            beijing_time = get_beijing_time().strftime("%Y-%m-%d %H:%M:%S")
+
             print("\n" + "="*60)
             print("🚀 AI趋势跟踪交易系统已启动")
+            print(f"🕐 启动时间: {beijing_time} (北京时间)")
             print(f"⚡ 每{ai_analysis_interval}秒分析市场，捕捉5-30分钟趋势机会")
             print("💰 策略：精选高质量信号，耐心持仓")
+            if monitor_started:
+                print("🔍 止盈实时监控：已启用 (1秒检测间隔)")
             print("="*60 + "\n")
 
             # 主循环：每分钟执行一次AI分析
             loop_count = 0
+            next_interval = ai_analysis_interval  # 初始化间隔
             while True:
                 try:
                     loop_count += 1
@@ -131,6 +166,31 @@ def main():
                                 else:
                                     print(f"\n⚠️ AI建议: 暂时观望，等待更好的机会 [{current_time}]")
 
+                                # 获取AI建议的下次调用间隔
+                                next_interval = analysis_result.get('next_call_interval')
+                                interval_reason = analysis_result.get('interval_reason', 'AI建议')
+
+                                # 处理动态间隔逻辑
+                                if next_interval is not None and isinstance(next_interval, (int, float)):
+                                    # 确保间隔不超过配置的最大值
+                                    if next_interval < 0:
+                                        next_interval = ai_analysis_interval
+                                        app_logger.warning(f"AI返回了负数间隔，使用配置间隔: {ai_analysis_interval}秒")
+                                    elif next_interval > ai_analysis_interval:
+                                        app_logger.info(f"AI建议间隔{next_interval}秒超过配置值{ai_analysis_interval}秒，使��配置间隔")
+                                        next_interval = ai_analysis_interval
+                                    else:
+                                        app_logger.info(f"AI动态调整分析间隔为: {next_interval}秒 - {interval_reason}")
+                                else:
+                                    next_interval = ai_analysis_interval
+                                    app_logger.info(f"AI未返回间隔建议，使用默认配置间隔: {ai_analysis_interval}秒")
+
+                                # 显示AI的间隔建议（如果有）
+                                if next_interval != ai_analysis_interval:
+                                    next_call_time_beijing = format_next_call_time(next_interval)
+                                    print(f"\n🤖 AI智能调整: 下次分析将在{next_interval}秒后进行 ({interval_reason})")
+                                    print(f"🕐 下次调用时间: {next_call_time_beijing} (北京时间)")
+
                                 # 执行交易计划
                                 if recommendations:
                                     app_logger.info("开始执行AI交易建议...")
@@ -164,25 +224,48 @@ def main():
 
                     if analysis_result is None:
                         app_logger.error(f"AI分析在 {max_retries} 次尝试后仍然失败")
-                        print(f"\n❌ AI分析失败，将在下一分钟继续尝试 [{current_time}]")
+                        next_call_time_beijing = format_next_call_time(ai_analysis_interval)
+                        print(f"\n❌ AI分析失败，将在{ai_analysis_interval}秒后继续尝试 [{current_time}]")
+                        print(f"🕐 下次调用时间: {next_call_time_beijing} (北京时间)")
+                        next_interval = ai_analysis_interval  # 分析失败时使用默认间隔
+                    else:
+                        # AI分析成功，已经获取了next_interval
+                        pass
 
                     app_logger.info(f"=== 第{loop_count}轮AI分析完成 ===")
-                    print(f"\n⏰ 等待{ai_analysis_interval}秒后进行下次分析... (当前轮次: {loop_count})")
+
+                    # 计算下次调用时间（北京时间）
+                    next_call_time_beijing = format_next_call_time(next_interval)
+
+                    print(f"\n⏰ 等待{next_interval}秒后进行下次分析... (当前轮次: {loop_count})")
+                    print(f"🕐 下次调用时间: {next_call_time_beijing} (北京时间)")
                     print("=" * 60 + "\n")
 
-                    # 等待配置的间隔时间
-                    time.sleep(ai_analysis_interval)
+                    # 等待动态间隔时间
+                    time.sleep(next_interval)
 
                 except KeyboardInterrupt:
                     app_logger.info("检测到用户中断，正在停止AI交易系统...")
+
+                    # 停止止盈监控
+                    app_logger.info("正在停止止盈监控系统...")
+                    if stop_take_profit_monitoring():
+                        app_logger.info("✅ 止盈监控系统已停止")
+                        print("🔍 止盈实时监控已停止")
+                    else:
+                        app_logger.warning("⚠️ 止盈监控系统停止失败")
+
                     print("\n🛑 AI交易系统已停止")
                     break
                 except Exception as loop_error:
                     app_logger.error(f"主循环发生异常: {loop_error}")
                     import traceback
                     app_logger.error(f"详细错误: {traceback.format_exc()}")
+                    next_call_time_beijing = format_next_call_time(ai_analysis_interval)
                     print(f"\n⚠️ 系统异常，但将在{ai_analysis_interval}秒后继续运行...")
-                    time.sleep(ai_analysis_interval)  # 出错后等待配置的间隔时间继续
+                    print(f"🕐 下次调用时间: {next_call_time_beijing} (北京时间)")
+                    next_interval = ai_analysis_interval  # 异常时重置为默认间隔
+                    time.sleep(next_interval)  # 出错后等待间隔时间继续
 
 
         else:

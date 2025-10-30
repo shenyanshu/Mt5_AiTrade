@@ -5,6 +5,7 @@ import datetime
 import pytz
 import MetaTrader5 as mt5
 from MT5.order_info import get_active_positions, get_pending_orders
+from MT5.history_info import get_history_orders, format_history_for_prompt
 from MT5.market_info import get_pivot_points, get_rsi, get_macd, get_bollinger_bands, get_atr, get_adx, get_dynamic_support_resistance
 
 
@@ -75,75 +76,7 @@ def get_short_term_indicators(symbol, current_price=None):
             current_price = 0
 
     try:
-        # M1 时间框架 - 精确入场
-        indicators['M1'] = {}
-
-        # RSI (M1)
-        rsi_m1 = get_rsi(symbol, mt5.TIMEFRAME_M1, 14, 5)
-        if rsi_m1 and len(rsi_m1) >= 3:
-            indicators['M1']['rsi'] = rsi_m1[-1] if rsi_m1 else None
-            indicators['M1']['rsi_trend'] = "上升" if rsi_m1[-1] > rsi_m1[-3] else "下降"
-            indicators['M1']['rsi_extreme'] = "超买" if rsi_m1[-1] > 70 else "超卖" if rsi_m1[-1] < 30 else "中性"
-
-        # MACD (M1)
-        macd_m1 = get_macd(symbol, mt5.TIMEFRAME_M1, 12, 26, 9, 5)
-        if macd_m1 and len(macd_m1[0]) >= 3:
-            indicators['M1']['macd'] = macd_m1[0][-1] if macd_m1[0] else None
-            indicators['M1']['macd_signal'] = macd_m1[1][-1] if macd_m1[1] else None
-            indicators['M1']['macd_histogram'] = macd_m1[2][-1] if macd_m1[2] else None
-
-            # MACD信号分析
-            macd_current = macd_m1[0][-1]
-            macd_signal_current = macd_m1[1][-1]
-            macd_signal_prev = macd_m1[1][-2] if len(macd_m1[1]) >= 2 else macd_signal_current
-
-            # 判断金叉死叉
-            if len(macd_m1[0]) >= 2:
-                macd_prev = macd_m1[0][-2]
-                if macd_prev <= macd_signal_prev and macd_current > macd_signal_current:
-                    indicators['M1']['macd_signal_type'] = "金叉"
-                elif macd_prev >= macd_signal_prev and macd_current < macd_signal_current:
-                    indicators['M1']['macd_signal_type'] = "死叉"
-                else:
-                    indicators['M1']['macd_signal_type'] = "震荡"
-            else:
-                indicators['M1']['macd_signal_type'] = "未知"
-
-        # 布林带 (M1)
-        bb_m1 = get_bollinger_bands(symbol, mt5.TIMEFRAME_M1, 20, 2.0, 5)
-        if bb_m1 and len(bb_m1) >= 3:
-            indicators['M1']['bb_upper'] = bb_m1[0][-1] if bb_m1[0] else None
-            indicators['M1']['bb_middle'] = bb_m1[1][-1] if bb_m1[1] else None
-            indicators['M1']['bb_lower'] = bb_m1[2][-1] if bb_m1[2] else None
-
-            # 布林带位置分析
-            bb_upper = bb_m1[0][-1]
-            bb_lower = bb_m1[2][-1]
-            bb_width = bb_upper - bb_lower
-
-            if current_price > bb_upper:
-                indicators['M1']['bb_position'] = "上轨上方(突破)"
-            elif current_price < bb_lower:
-                indicators['M1']['bb_position'] = "下轨下方(突破)"
-            else:
-                total_range = bb_upper - bb_lower
-                position_ratio = (current_price - bb_lower) / total_range
-                if position_ratio > 0.8:
-                    indicators['M1']['bb_position'] = "上轨附近"
-                elif position_ratio < 0.2:
-                    indicators['M1']['bb_position'] = "下轨附近"
-                else:
-                    indicators['M1']['bb_position'] = "中轨区域"
-
-            # 布林带宽度状态 (比较当前与历史平均宽度)
-            if len(bb_m1[0]) >= 5:  # 需要足够的历史数据
-                recent_widths = [bb_m1[0][i] - bb_m1[2][i] for i in range(-5, 0)]
-                avg_width = sum(recent_widths) / len(recent_widths)
-                indicators['M1']['bb_width_status'] = "扩张" if bb_width > avg_width * 1.1 else "收缩" if bb_width < avg_width * 0.9 else "正常"
-            else:
-                indicators['M1']['bb_width_status'] = "正常"
-
-        # M5 时间框架 - 短期确认
+        # M5 时间框架 - 主要分析时间框架
         indicators['M5'] = {}
 
         # RSI (M5)
@@ -183,16 +116,7 @@ def get_short_term_indicators(symbol, current_price=None):
             indicators['M5']['ma5'] = ma_m5[0][-1] if ma_m5[0] else None  # 5EMA
             indicators['M5']['ma10'] = ma_m5[1][-1] if ma_m5[1] else None  # 10EMA
 
-        # ATR (M1) - 超短期波动
-        atr_m1 = get_atr(symbol, mt5.TIMEFRAME_M1, 14, 5)
-        if atr_m1 and len(atr_m1) >= 3:
-            indicators['M1']['atr'] = atr_m1[-1] if atr_m1 else None
-            indicators['M1']['atr_trend'] = "上升" if atr_m1[-1] > atr_m1[-3] else "下降"
-            # 相对波动性判断
-            atr_avg = sum(atr_m1) / len(atr_m1)
-            indicators['M1']['atr_volatility'] = "高" if atr_m1[-1] > atr_avg * 1.2 else "低"
-
-        # ATR (M5) - 短期波动
+        # ATR (M5) - 主要波动性参考
         atr_m5 = get_atr(symbol, mt5.TIMEFRAME_M5, 14, 5)
         if atr_m5 and len(atr_m5) >= 3:
             indicators['M5']['atr'] = atr_m5[-1] if atr_m5 else None
@@ -202,7 +126,7 @@ def get_short_term_indicators(symbol, current_price=None):
             indicators['M5']['atr_volatility'] = "高" if atr_m5[-1] > atr_avg * 1.2 else "低"
 
     except Exception as e:
-        print(f"获取 {symbol} M1/M5指标时出错: {e}")
+        print(f"获取 {symbol} M5指标时出错: {e}")
 
     return indicators
 
@@ -265,18 +189,10 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
     """格式化短期趋势指标为易读的文本"""
     formatted = "### 📊 技术指标分析\n"
 
-    # M1/M5 精确入场指标
-    formatted += "**M1/M5 (精确入场):**\n"
+    # M5 主要指标
+    formatted += "**M5 (主要分析):**\n"
 
     # RSI信号 (增强版)
-    if 'M1' in scalping_data and 'rsi' in scalping_data['M1']:
-        rsi_m1 = scalping_data['M1']['rsi']
-        rsi_trend = scalping_data['M1'].get('rsi_trend', '未知')
-        rsi_extreme = scalping_data['M1'].get('rsi_extreme', '中性')
-        trend_icon = "📈" if rsi_trend == "上升" else "📉"
-        extreme_icon = "🔴" if rsi_extreme == "超买" else "🟢" if rsi_extreme == "超卖" else "🟡"
-        formatted += f"- RSI(M1): {rsi_m1:.1f} {extreme_icon}{rsi_extreme} {trend_icon}{rsi_trend}\n"
-
     if 'M5' in scalping_data and 'rsi' in scalping_data['M5']:
         rsi_m5 = scalping_data['M5']['rsi']
         rsi_trend = scalping_data['M5'].get('rsi_trend', '未知')
@@ -286,11 +202,11 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
         formatted += f"- RSI(M5): {rsi_m5:.1f} {extreme_icon}{rsi_extreme} {trend_icon}{rsi_trend}\n"
 
     # MACD信号 (增强版)
-    if 'M1' in scalping_data and all(k in scalping_data['M1'] for k in ['macd', 'macd_signal', 'macd_histogram']):
-        macd = scalping_data['M1']['macd']
-        signal = scalping_data['M1']['macd_signal']
-        hist = scalping_data['M1']['macd_histogram']
-        signal_type = scalping_data['M1'].get('macd_signal_type', '震荡')
+    if 'M5' in scalping_data and all(k in scalping_data['M5'] for k in ['macd', 'macd_signal', 'macd_histogram']):
+        macd = scalping_data['M5']['macd']
+        signal = scalping_data['M5']['macd_signal']
+        hist = scalping_data['M5']['macd_histogram']
+        signal_type = scalping_data['M5'].get('macd_signal_type', '震荡')
 
         # MACD状态判断
         if signal_type == "金叉":
@@ -300,12 +216,12 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
         else:
             macd_trend = "🟡震荡整理"
 
-        formatted += f"- MACD(M1): {macd_trend} ({signal_type}) 柱:{hist:.5f}\n"
+        formatted += f"- MACD(M5): {macd_trend} ({signal_type}) 柱:{hist:.5f}\n"
 
     # 布林带位置 (增强版)
-    if 'M1' in scalping_data and all(k in scalping_data['M1'] for k in ['bb_upper', 'bb_middle', 'bb_lower']):
-        bb_position = scalping_data['M1'].get('bb_position', '通道内')
-        bb_width_status = scalping_data['M1'].get('bb_width_status', '正常')
+    if 'M5' in scalping_data and all(k in scalping_data['M5'] for k in ['bb_upper', 'bb_middle', 'bb_lower']):
+        bb_position = scalping_data['M5'].get('bb_position', '通道内')
+        bb_width_status = scalping_data['M5'].get('bb_width_status', '正常')
 
         # 布林带位置图标
         if "突破" in bb_position:
@@ -320,7 +236,7 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
         # 宽度状态图标
         width_icon = "📈" if bb_width_status == "扩张" else "📉" if bb_width_status == "收缩" else "➡️"
 
-        formatted += f"- 布林带(M1): {position_icon}{bb_position} {width_icon}{bb_width_status}带宽\n"
+        formatted += f"- 布林带(M5): {position_icon}{bb_position} {width_icon}{bb_width_status}带宽\n"
 
     # 移动平均线趋势
     if 'M5' in scalping_data and all(k in scalping_data['M5'] for k in ['ma5', 'ma10']):
@@ -351,23 +267,14 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
     # 多时间框架ATR波动性分析 (增强版)
     formatted += "- **ATR波动性分析:**\n"
 
-    # M1 ATR - 超短期
-    if 'M1' in scalping_data and 'atr' in scalping_data['M1']:
-        atr_m1 = scalping_data['M1']['atr']
-        atr_trend_m1 = scalping_data['M1'].get('atr_trend', '未知')
-        atr_vol_m1 = scalping_data['M1'].get('atr_volatility', '低')
-        trend_icon_m1 = "📈" if atr_trend_m1 == "上升" else "📉"
-        vol_icon_m1 = "🔴" if atr_vol_m1 == "高" else "🟢"
-        formatted += f"  - ATR(M1): {atr_m1:.5f} {vol_icon_m1}{atr_vol_m1}波动 {trend_icon_m1}{atr_trend_m1} - 超短期参考\n"
-
-    # M5 ATR - 短期主要参考
+    # M5 ATR - 主要波动性参考
     if 'M5' in scalping_data and 'atr' in scalping_data['M5']:
         atr_m5 = scalping_data['M5']['atr']
         atr_trend_m5 = scalping_data['M5'].get('atr_trend', '未知')
         atr_vol_m5 = scalping_data['M5'].get('atr_volatility', '低')
         trend_icon_m5 = "📈" if atr_trend_m5 == "上升" else "📉"
         vol_icon_m5 = "🔴" if atr_vol_m5 == "高" else "🟢"
-        formatted += f"  - ATR(M5): {atr_m5:.5f} {vol_icon_m5}{atr_vol_m5}波动 {trend_icon_m5}{atr_trend_m5} - **主要参考**\n"
+        formatted += f"  - ATR(M5): {atr_m5:.5f} {vol_icon_m5}{atr_vol_m5}波动 {trend_icon_m5}{atr_trend_m5} - **主要波动性参考**\n"
 
     # M15 ATR - 趋势背景
     if 'M15' in m15_m30_data and 'atr' in m15_m30_data['M15']:
@@ -378,251 +285,335 @@ def format_short_term_indicators(scalping_data, m15_m30_data, current_price):
         vol_icon_m15 = "🔴" if atr_vol_m15 == "高" else "🟢"
         formatted += f"  - ATR(M15): {atr_m15:.5f} {vol_icon_m15}{atr_vol_m15}波动 {trend_icon_m15}{atr_trend_m15} - 趋势背景\n"
 
-    # ATR使用建议
-    formatted += "  - **建议**: 基于M5 ATR设置止损，参考M1调整精度，考虑M15判断趋势\n"
-
     return formatted
 
 
-def get_ai_system_prompt():
-    """短期趋势跟踪交易AI系统提示词"""
-    return """你是一个专业的短期趋势跟踪交易员，专注于捕捉5-30分钟的短期趋势机会。
+def get_ai_system_prompt(monitored_pairs_list=None):
+    """简化的多策略交易AI系统提示词"""
 
-## 🎯 交易策略核心
-**短期趋势跟踪原则**：
-- 持仓时间：通常5-15分钟，最长不超过30分钟
-- 寻找高质量的短期趋势机会
-- 设置合理的止损控制风险
-- 精选交易：等待高概率信号，避免过度交易
-- **多货币对交易**：即使已有持仓，也要观察所有监控货币对，寻找更多机会
-- **收益最大化**：通过把握优质趋势机会，提升整体收益比率
+    # 准备监控货币对列表文本
+    if monitored_pairs_list and len(monitored_pairs_list) > 0:
+        pairs_text = "- " + "\n- ".join(monitored_pairs_list)
+    else:
+        pairs_text = "- 无监控货币对配置"
 
-## 🚨 交易类型严格要求
-**你必须只使用以下5种标准交易类型：**
-1. `BUY` - 开买入仓位
-2. `SELL` - 开卖出仓位
-3. `CLOSE` - 平现有仓位（需要提供准确的order_id）
-4. `CANCEL` - 撤销挂单（需要提供准确的order_id）
-5. `MODIFY` - 修改现有仓位的止损止盈（需要提供准确的order_id）
+    base_prompt = """你是一个专业的交易AI，能够根据市场条件灵活选择最适合的交易策略来实现盈利最大化。"""
 
-**绝对禁止使用任何其他类型：**
-- 禁止：NO_TRADE, NO_NEW_POSITIONS, WAIT, SKIP, HOLD
-- 禁止：任何自定义的非标准操作类型
-- 如果没有合适的交易机会，可以不返回任何recommendations或返回空数组[]
+    # 获取完整的系统提示词
+    full_prompt = base_prompt + """
 
-## 📊 技术指标优先级
-**M5/M15时间框架（主要）**：
-- RSI < 30 🟢 超卖买入机会 | RSI > 70 🔴 超买卖出机会
-- MACD金叉 🟢 买入信号 | MACD死叉 🔴 卖出信号
-- 布林带突破：价格突破上轨🔴追涨 | 跌破下轨🟢追跌
-- EMA趋势：价格 > 5EMA > 10EMA 🟢强势 | 价格 < 5EMA < 10EMA 🔴弱势
+## 🎯 核心原则
+**灵活应变，盈利优先**：
+- 根据实时市场条件自主选择最优策略
+- 唯一目标：在风险可控的前提下实现持续盈利
+- 可用策略：趋势跟踪、均值回归、突破、区间交易、动量交易
+- 支持多货币对同时交易，寻找所有可用机会
 
-**M1时间框架（辅助）**：
-- 用于选择精确入场时机
-- 避免基于M1信号单独开仓
-- 配合M5/M15信号优化入场点
+## 📊 策略指南
+### 趋势跟踪
+- **适用**：强趋势市场，ADX > 25
+- **信号**：MACD金叉死叉、EMA排列、价格突破均线
+- **特点**：顺势而为，持仓时间相对较长
 
-**M30时间框架（趋势背景）**：
-- ADX > 25 🟢强趋势适合跟踪 | ADX < 20 🔴弱趋势避免交易
-- ATR波动性：高波动🔴调整止损 | 低波动🟢稳定盈利
+### 均值回归
+- **适用**：震荡市场，RSI极端值（<30或>70）
+- **信号**：布林带边界反弹、价格远离均线
+- **特点**：快进快出，利用价格反转
 
-## 🚨 关键指令 - 订单号处理
-**非常重要：必须正确区分持仓(position)和挂单(pending order)**
+### 突破策略
+- **适用**：关键价位突破，技术形态突破
+- **信号**：支撑阻力位突破、成交量放大
+- **特点**：追涨杀跌，注意假突破风险
 
-### 持仓处理 (CLOSE/MODIFY)
-- **CLOSE操作**: 用于平仓，从"当前持仓"部分找订单号
-- **MODIFY操作**: 用于修改持仓的止损止盈，从"当前持仓"部分找订单号
-- 持仓信息格式：`订单号: 123456 | XAUUSDm | 买入 | 手数:0.01 | 盈亏:15.20`
+### 区间交易
+- **适用**：明确的箱体震荡
+- **信号**：价格在区间内反复测试边界
+- **特点**：高抛低吸，边界止损
 
-### 挂单处理 (CANCEL)
-- **CANCEL操作**: 用于撤单，从"当前挂单"部分找订单号
-- 挂单信息格式：`订单号: 123456 | XAUUSDm | Buy Limit | 手数:0.01 | 价格:1.16525`
+### 动量策略
+- **适用**：快速价格运动，新闻驱动
+- **信号**：成交量激增、跳空缺口
+- **特点**：抓住短期动量，快速退出
 
-**重要提醒**:
-- 持仓可以用MODIFY修改止损止盈，不能用CANCEL
-- 挂单只能用CANCEL删除，不能用MODIFY
-- 必须从对应的列表中找到正确的订单号
+## 🧠 策略选择建议
+根据市场条件灵活选择：
+- **ADX > 25**：考虑趋势跟踪策略
+- **ADX < 20**：考虑均值回归或区间交易策略
+- **高波动**：考虑突破或动量策略
+- **布林带边界**：考虑均值回归策略
+- **关键价位**：考虑突破策略
 
-## ⚡ 短期趋势跟踪响应格式
+**重要**：这些建议仅供参考，你可以根据实际情况选择任意策略组合。
 
-### 🚨 重要：只允许使用以下标准交易类型
-**允许的action类型（必须严格使用）：**
-- `BUY` - 开买入仓
-- `SELL` - 开卖出仓
-- `CLOSE` - 平仓（需要提供order_id）
-- `CANCEL` - 撤销挂单（需要提供order_id）
-- `MODIFY` - 修改持仓止损止盈（需要提供order_id）
+## 📈 技术指标解读
+### RSI
+- > 70：超买，考虑均值回归机会
+- < 30：超卖，考虑均值回归机会
+- > 50：偏向看涨
+- < 50：偏向看跌
 
-**禁止使用的类型：**
-- ❌ NO_TRADE, NO_NEW_POSITIONS, WAIT, SKIP, HOLD 等自定义类型
-- ❌ 任何不在上面允许列表中的action
+### MACD
+- 金叉：看涨信号
+- 死叉：看跌信号
+- 柱状体变化：动量强弱
 
-### 开新仓格式：
+### 布林带
+- 价格触及边界：均值回归信号
+- 价格突破边界：突破信号
+- 价格在中部：区间交易信号
+
+### EMA均线
+- 价格 > 5EMA > 10EMA：强势上涨
+- 价格 < 5EMA < 10EMA：强势下跌
+- 均线交叉：趋势转换信号
+
+## 🚨 交易类型和要求
+**允许的交易类型**：
+- `BUY` - 开买入仓位
+- `SELL` - 开卖出仓位
+- `CLOSE` - 平现有仓位（需要order_id）
+- `CANCEL` - 撤销挂单（需要order_id）
+- `MODIFY` - 修改持仓止损止盈（需要order_id）
+
+**重要约束**：
+- 只能使用监控列表中的外汇对（具体货币对请查看当前提供的市场数据）
+- volume > 0，止损止盈点数 > 0
+- 开新仓时entry_offset_points为0（市价单）
+- 可以同时持有多个货币对的订单
+- 每个货币对独立分析，不受当前持仓状态影响
+
+## ⚡ 风险控制原则
+1. **风险控制优先**：任何交易都要控制风险
+2. **灵活设置止损**：根据市场波动性和策略特点设置止损
+3. **合理设置止盈**：考虑风险回报比，不要过度贪婪
+4. **资金管理**：根据账户规模合理分配资金
+5. **多元化交易**：在不同货币对上分散风险
+
+## 💡 参数设置原则
+**重要**：你应该根据实时市场条件自主判断并设置最合适的交易参数。记住，成功的交易在于灵活应变，而不是固守规则。
+
+## 📊 动态调用间隔
+根据市场活跃度和策略特点动态建议下次调用间隔：
+
+**返回格式要求**：
 ```json
 {
+  "analysis": "你的市场分析和策略选择说明...",
+  "recommendations": [...],
+  "next_call_interval": 300,
+  "interval_reason": "某个监控货币对处于趋势跟踪中，建议5分钟后确认趋势延续"
+}
+```
+
+**间隔设置原则**：
+- **next_call_interval**: 下次建议调用间隔（秒数）
+- **范围**: 60-1800秒（1分钟-30分钟）
+- **interval_reason**: 说明间隔设置原因
+
+**参考间隔**：
+- 动量策略：60-300秒（需要快速反应）
+- 均值回归：120-600秒（等待反转信号）
+- 趋势跟踪：300-1200秒（给趋势发展时间）
+- 突破策略：60-600秒（确认突破有效性）
+- 区间交易：300-1200秒（等待价格触及边界）
+
+## 🎯 响应格式示例
+
+### 开新仓：
+```json
+{
+  "analysis": "某个监控货币对处于强上升趋势，MACD金叉，选择趋势跟踪策略...",
   "recommendations": [
     {
-      "symbol": "XAUUSDm",
+      "symbol": "监控货币对的名称",
       "action": "BUY",
       "order_type": "MARKET",
       "volume": 0.01,
       "entry_offset_points": 0,
-      "stop_loss_points": [根据市场情况自主判断],
-      "take_profit_points": [根据市场情况自主判断],
-      "comment": "RSI超卖反弹+MACD金叉",
-      "reasoning": "RSI超卖，MACD金叉形成，布林带下轨支撑，适合短期趋势跟踪"
+      "stop_loss_points": 20,
+      "take_profit_points": 40,
+      "comment": "趋势跟踪：MACD金叉+EMA支撑",
+      "reasoning": "ADX=28强趋势，MACD金叉确认，价格突破关键阻力位"
     }
-  ]
+  ],
+  "next_call_interval": 300,
+  "interval_reason": "趋势跟踪中，建议5分钟后确认"
 }
 ```
 
-**点差数据示例**：
-- EURUSDm：点差2点，成本$2.00/标准手
-- GBPJPY：点差7点，成本$7.00/标准手
-- 其他货币对：点差不同，成本各异
-
-### 平仓/撤单格式：
+### 平仓/修改：
 ```json
 {
+  "analysis": "持仓达到盈利目标，技术指标出现反转信号...",
   "recommendations": [
     {
-      "symbol": "XAUUSDm",
+      "symbol": "监控货币对的名称",
       "action": "CLOSE",
       "order_id": 123456,
-      "reasoning": "达到目标盈利或出现反转信号"
+      "reasoning": "达到目标盈利，MACD柱状体收缩"
     }
-  ]
+  ],
+  "next_call_interval": 600,
+  "interval_reason": "平仓后观察，建议10分钟后重新分析"
 }
 ```
 
-### 修改持仓格式：
-```json
-{
-  "recommendations": [
-    {
-      "symbol": "XAUUSDm",
-      "action": "MODIFY",
-      "order_id": 123456,
-      "stop_loss_points": [根据市场情况自主判断],
-      "take_profit_points": [根据市场情况自主判断],
-      "reasoning": "快速盈利中，调整止损保护利润"
-    }
-  ]
-}
-```
+## 🚨 MODIFY操作规则
+**MT5约束**：
+- 买单：止损价 ≤ 开仓价，止盈价 ≥ 开仓价
+- 卖单：止损价 ≥ 开仓价，止盈价 ≤ 开仓价
+- 止损止盈点数必须为正数
 
-## ⚠️ 短期趋势跟踪交易纪律
-1. **严格止损**：单笔亏损不超过账户1%
-2. **耐心持盈**：给趋势足够发展时间，避免过早平仓
-3. **顺势交易**：严格顺着M15/M30趋势方向交易
-4. **精选机会**：宁缺毋滥，等待高质量信号确认
-5. **关注点差成本**：确保交易成本合理
-6. **多元化交易**：即使已有持仓，也要分析所有监控货币对，寻找最佳交易机会
-7. **资金管理**：同时持仓多个订单时，总风险控制在账户可承受范围内
-8. **趋势识别**：专注于识别和跟踪短期趋势的启动和延续
+## ⚠️ 交易纪律
+1. **灵活应变**：根据市场变化调整策略
+2. **风险控制**：任何时候都要控制风险
+3. **精选机会**：宁可错过，不要做错
+4. **持续学习**：根据结果不断优化策略
+5. **保持冷静**：不要被情绪影响决策
 
-## 📊 ATR波动性分析与止损设置
-**多时间框架ATR使用策略**：
-- **ATR(M1)**：入场时机参考，用于优化精确入场点
-- **ATR(M5)**：主要止损参考，适用于5-15分钟的趋势跟踪止损
-- **ATR(M15)**：趋势背景判断，帮助判断市场整体波动环境
+## 💰 点差成本
+- 每个货币对点差不同，这是交易成本
+- 系统会自动调整不符合MT5最小要求的止损止盈
+- 建议确保止盈距离大于点差成本
 
-**ATR-based止损建议**：
-- **高波动市场**（ATR较大）：适当增大止损距离，避免正常波动误触发
-- **低波动市场**（ATR较小）：可设置较紧止损，提高风险回报比
-- **止损范围参考**：通常为ATR(M5)的1.5-3倍，根据具体市场情况调整
-- **动态调整**：结合ATR(M1)优化入场，考虑ATR(M15)判断趋势强度
+## 🎯 当前监控货币对
+**重要**：以下是你当前可以交易的货币对列表：
+{{MONITORED_PAIRS_LIST}}
 
-**重要提醒**：ATR是重要的参考信息，但你仍需结合技术指标、支撑阻力位、市场情绪等综合判断，自主决定最合适的止损距离。
+你只能对上述列出的货币对进行交易，请确保使用准确的货币对名称。
 
-## 💰 点差信息说明
-**每个货币对的点差都不同，这是交易的基本成本。**
+## 🎯 历史交易分析
+**重要**：你会看到最近1天的完整历史交易记录，包括你之前的AI决策和最终盈亏结果。这些记录只包含你自己生成的订单（魔数：100001），并提供了今日的统计数据。
 
-### 点差数据：
-- **点差**：买入价和卖出价之间的差额（以点为单位）
-- **成本**：标准手数的点差成本金额
-- **影响**：点差是开仓时即产生的成本
+**学习目标**：
+- **识别成功模式**：分析所有盈利交易的共同特征和策略选择规律
+- **避免重复错误**：全面识别亏损交易的问题并系统性改进
+- **策略评估**：根据完整的交易数据评估不同策略的实际表现
+- **持续改进**：基于全面的交易反馈优化决策逻辑
 
-### 自动调整规则：
-系统会自动调整你的止损止盈设置以符合MT5要求：
-- 最小止损距离：基于MT5的最小止损要求和点差
-- 你的设置如果小于要求，系统会自动调整到合规距离
+**分析方法**：
+1. **模式识别**：从大量交易中识别成功的信号组合和策略模式
+2. **策略验证**：验证不同策略在全天市场变化中的有效性
+3. **风险管理**：评估整体风险控制效果和资金管理策略
+4. **时机优化**：分析入场和出场时机的准确性，识别最佳操作窗口
+5. **市场适应**：了解你的策略在不同市场时段的适应性
 
-## 🎯 建议参数（仅供参考）
-根据短期趋势跟踪特点，以下参数范围可供参考：
-- 止损点数：根据市场波动和点差成本自行判断
-- 止盈点数：根据风险回报比和市场情况自行判断
-- 风险回报比：确保合理性和可持续性
+## 🎯 最终目标
+根据实时市场条件和历史交易经验，灵活选择最优策略，在风险可控的前提下实现持续盈利。记住，成功的交易在于灵活应变和持续学习，而不是固守规则。系统会根据这些偏移量实时计算具体价格。"""
 
-请根据当前市场条件、点差成本和技术分析结果，自主判断并设置最合适的止损止盈间隔。
+    # 替换货币对列表占位符
+    final_prompt = full_prompt.replace("{{MONITORED_PAIRS_LIST}}", pairs_text)
 
-## 💼 多货币对交易策略
-**重要提醒**：
-- **不要因为已有持仓而忽略其他货币对的机会**
-- **每个货币对都是独立的分析机会**
-- **分散投资可以降低整体风险，提升收益稳定性**
-- **同时监控多个货币对的技术信号和市场状态**
-
-**执行原则**：
-1. **全面分析**：分析所有监控货币对，不受当前持仓影响
-2. **机会优先**：哪个货币对出现最佳信号就交易哪个
-3. **风险分散**：适当分配资金到不同货币对
-4. **收益最大化**：通过多个优质机会提升整体收益
-
-## 📋 持仓分析策略
-**重要**：仔细分析当前持仓的完整注释信息！
-
-### 🔍 持仓注释分析要求：
-- **认真阅读每个持仓的完整注释**：包含开仓时的技术分析和推理过程
-- **对比当前市场状况**：与开仓时的技术信号进行对比
-- **评估持仓有效性**：判断开仓理由是否仍然有效
-- **决定持仓策略**：
-  - **继续持有**：如果开仓理由依然有效且趋势未变
-  - **立即平仓**：如果开仓理由已失效或出现反转信号
-  - **调整止损止盈**：如果市场情况发生变化但趋势方向未改
-
-### 📊 分析重点：
-1. **技术指标对比**：当前的RSI、MACD、布林带等指标与开仓时的对比
-2. **趋势持续性**：开仓时的趋势是否仍在继续
-3. **信号反转**：是否出现与开仓理由相反的强信号
-4. **盈亏状态**：结合当前盈亏情况和技术分析决定是否平仓
-
-**记住**：每个持仓的注释都是你之前决策的完整记录，要认真分析并对比当前市场状况！
-
-## 📈 信号确认要求
-**开仓条件（必须满足3个以上，且包含主要信号）**：
-- **主要信号**：RSI极端信号（<30或>70）+ MACD明确交叉信号
-- **次要信号**：布林带突破或反弹、EMA趋势方向一致
-- **趋势确认**：ADX显示足够趋势强度，M15趋势方向一致
-- **质量优先**：宁可错过机会，也不要低质量信号
-
-## 重要约束
-- 只使用监控列表中的外汇对
-- volume > 0
-- 止损止盈点数 > 0
-- 开新仓时entry_offset_points为0（市价单）
-- 根据市场情况自主判断止损止盈间隔
-- **可以同时持有多个货币对的订单**
-- **每个货币对独立分析，不受当前持仓状态影响**
-
-系统会根据这些偏移量实时计算具体价格。"""
+    return final_prompt
 
 
-def count_prompt_tokens(prompt_text, use_tiktoken=True):
-    """计算prompt的token数量"""
-    if use_tiktoken:
-        try:
-            import tiktoken
-            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-            return len(encoding.encode(prompt_text))
-        except:
-            return estimate_tokens_by_chars(prompt_text)
-    else:
-        return estimate_tokens_by_chars(prompt_text)
+def format_multi_strategy_indicators(scalping_data, trend_data, current_price, symbol):
+    """为多策略交易格式化技术指标分析"""
+    formatted = "### 📊 多策略技术指标分析\n"
+
+    # 市场状态判断
+    adx_value = None
+    if 'M15' in trend_data and 'adx' in trend_data['M15']:
+        adx_value = trend_data['M15']['adx']
+
+    # 市场状态标题
+    if adx_value:
+        if adx_value > 25:
+            market_state = "🟈 **强趋势市场** - 优先考虑趋势跟踪策略"
+        elif adx_value < 20:
+            market_state = "🔄 **震荡市场** - 优先考虑均值回归/区间交易策略"
+        else:
+            market_state = "⚖️ **中等强度市场** - 可考虑多策略组合"
+        formatted += f"{market_state} (ADX: {adx_value:.1f})\n\n"
+
+    # 不同策略视角的信号分析
+    formatted += "**多策略信号解读：**\n"
+
+    # M5 主要指标 - 多策略解读
+    formatted += "**M5 (主要入场时机):**\n"
+
+    # RSI的多策略解读
+    if 'M5' in scalping_data and 'rsi' in scalping_data['M5']:
+        rsi = scalping_data['M5']['rsi']
+        if rsi > 70:
+            formatted += f"- RSI: {rsi:.1f} 🔴**均值回归信号** - 超买，考虑卖出机会\n"
+        elif rsi < 30:
+            formatted += f"- RSI: {rsi:.1f} 🟢**均值回归信号** - 超卖，考虑买入机会\n"
+        elif rsi > 50:
+            formatted += f"- RSI: {rsi:.1f} 🟈**趋势跟踪信号** - 偏向看涨\n"
+        else:
+            formatted += f"- RSI: {rsi:.1f} 📉**趋势跟踪信号** - 偏向看跌\n"
+
+    # MACD的多策略解读
+    if 'M5' in scalping_data and all(k in scalping_data['M5'] for k in ['macd', 'macd_signal', 'macd_signal_type']):
+        signal_type = scalping_data['M5']['macd_signal_type']
+        if signal_type == "金叉":
+            formatted += f"- MACD: 🟈**趋势跟踪信号** - 金叉形成，顺势买入\n"
+        elif signal_type == "死叉":
+            formatted += f"- MACD: 📉**趋势跟踪信号** - 死叉形成，顺势卖出\n"
+        else:
+            formatted += f"- MACD: 🔄**震荡信号** - 震荡整理，等待明确方向\n"
+
+    # 布林带的多策略解读
+    if 'M5' in scalping_data and 'bb_position' in scalping_data['M5']:
+        bb_position = scalping_data['M5']['bb_position']
+        if "突破" in bb_position:
+            formatted += f"- 布林带: ⚡**突破信号** - {bb_position}，可能开始新趋势\n"
+        elif "上轨" in bb_position:
+            formatted += f"- 布林带: 🔄**均值回归信号** - 触及上轨，考虑回调\n"
+        elif "下轨" in bb_position:
+            formatted += f"- 布林带: 🔄**均值回归信号** - 触及下轨，考虑反弹\n"
+        else:
+            formatted += f"- 布林带: ⚖️**区间交易信号** - {bb_position}，区间内运行\n"
+
+    # EMA趋势的多策略解读
+    if 'M5' in scalping_data and all(k in scalping_data['M5'] for k in ['ma5', 'ma10']):
+        ma5 = scalping_data['M5']['ma5']
+        ma10 = scalping_data['M5']['ma10']
+        if current_price > ma5 > ma10:
+            formatted += f"- EMA趋势: 🟈**趋势跟踪确认** - 强势上涨趋势\n"
+        elif current_price < ma5 < ma10:
+            formatted += f"- EMA趋势: 📉**趋势跟踪确认** - 强势下跌趋势\n"
+        else:
+            formatted += f"- EMA趋势: 🔄**震荡确认** - 趋势不明确，震荡整理\n"
+
+    # M15/M30 趋势背景
+    formatted += "\n**M15/M30 (策略选择背景):**\n"
+
+    # ADX趋势强度 - 策略选择指导
+    if adx_value:
+        if adx_value > 25:
+            formatted += f"- ADX强度: {adx_value:.1f} 🟈**适合趋势跟踪策略** - 趋势明显\n"
+        elif adx_value < 20:
+            formatted += f"- ADX强度: {adx_value:.1f} 🔄**适合震荡策略** - 趋势不明显\n"
+        else:
+            formatted += f"- ADX强度: {adx_value:.1f} ⚖️**可多策略组合** - 中等趋势强度\n"
+
+    # ATR波动性 - 策略选择指导
+    if 'M5' in scalping_data and 'atr' in scalping_data['M5']:
+        atr_m5 = scalping_data['M5']['atr']
+        atr_vol = scalping_data['M5'].get('atr_volatility', '低')
+
+        if atr_vol == "高":
+            formatted += f"- ATR(M5): {atr_m5:.5f} ⚡**高波动** - 适合突破/动量策略\n"
+        else:
+            formatted += f"- ATR(M5): {atr_m5:.5f} 🔄**低波动** - 适合均值回归/区间策略\n"
+
+    # 策略建议总结
+    formatted += "\n**📋 策略建议总结:**\n"
+    if adx_value:
+        if adx_value > 25:
+            formatted += "- 🟈 **推荐策略**: 趋势跟踪策略为主\n"
+        elif adx_value < 20:
+            formatted += "- 🔄 **推荐策略**: 均值回归/区间交易策略为主\n"
+        else:
+            formatted += "- ⚖️ **推荐策略**: 多策略组合使用\n"
+
+    return formatted
 
 
 def get_user_prompt():
-    """简化的用户提示词"""
+    """简化的多策略融合用户提示词"""
     try:
         with open('config.yaml', 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
@@ -692,10 +683,11 @@ def get_user_prompt():
 
     # 获取监控外汇对信息
     forex_pairs_info = ""
+    monitored_pairs = []
     try:
         monitored_pairs = config.get('forex_pairs', {}).get('monitored_pairs', [])
         if monitored_pairs:
-            forex_pairs_info = "## 📈 监控外汇对 (短期趋势跟踪模式)\n"
+            forex_pairs_info = "## 📈 监控外汇对\n"
             for symbol in monitored_pairs:
                 # 获取品种信息
                 symbol_info = mt5.symbol_info(symbol)
@@ -706,19 +698,20 @@ def get_user_prompt():
                     spread_value = tick.ask - tick.bid  # 点差价值
                     spread_cost = spread_value * 100000  # 标准手数的成本
 
-                    # 点差信息显示（仅客观数据）
-                    spread_status = f"{spread_points}点"
+                    # 价格和点差信息（仅客观数据）
+                    current_price_info = f"买价:{tick.bid:.5f} | 卖价:{tick.ask:.5f}"
+                    spread_info = f"点差: {spread_points}点 | 成本: ${spread_cost:.2f}/标准手"
 
                     # 获取技术指标
                     try:
-                        # 获取M1/M5指标
+                        # 获取M5指标
                         scalping_data = get_short_term_indicators(symbol, current_price)
 
                         # 获取M15/M30指标
                         trend_data = get_m15_m30_indicators(symbol)
 
-                        # 格式化技术指标
-                        indicators_text = format_short_term_indicators(scalping_data, trend_data, current_price)
+                        # 格式化多策略技术指标
+                        indicators_text = format_multi_strategy_indicators(scalping_data, trend_data, current_price, symbol)
                     except Exception as e:
                         indicators_text = f"- 技术指标获取失败: {e}\n"
 
@@ -749,18 +742,10 @@ def get_user_prompt():
                     except:
                         pivot_text = "枢轴点获取失败"
 
-                    # 价格和点差信息（仅客观数据）
-                    current_price_info = f"买价:{tick.bid:.5f} | 卖价:{tick.ask:.5f}"
-                    spread_info = f"点差: {spread_points}点 | 成本: ${spread_cost:.2f}/标准手"
-
-                    # 计算信息（仅客观数据）
-                    profit_info = f"当前点差: {spread_points}点，请根据点差成本合理设置止盈"
-
                     forex_pairs_info += f"""### {symbol}
 **💰 价格信息:**
 - 当前价格: {current_price_info}
 - {spread_info}
-- {profit_info}
 
 **📍 关键水平:**
 - {pivot_text}
@@ -776,6 +761,16 @@ def get_user_prompt():
     except Exception as e:
         forex_pairs_info = f"## 监控外汇对\n- 获取失败: {e}"
 
+    # 获取历史交易记录（只获取AI自己生成的订单）
+    try:
+        history_orders = get_history_orders(days_back=1)  # 获取最近1天的历史记录
+
+        # 动态限制显示数量：如果订单少于等于10条，显示全部；否则显示最近10条
+        max_display = 10 if len(history_orders) > 10 else len(history_orders)
+        history_text = format_history_for_prompt(history_orders, max_orders=max_display)
+    except Exception as e:
+        history_text = f"- 历史交易记录获取失败: {e}"
+
     # 获取时间信息
     time_info = get_time_info()
 
@@ -790,8 +785,9 @@ def get_user_prompt():
 ## 当前挂单
 {orders_text}
 
+{history_text}
+
 ## 💡 多货币对交易提醒
-**重要**：请分析所有监控的货币对，即使已有持仓也要寻找其他货币对的机会！
-**目标**：通过多货币对分散投资，最大化整体收益比率。
+分析所有监控的货币对，寻找最佳交易机会。每个货币对独立判断，不受现有持仓影响。
 
 {forex_pairs_info}"""

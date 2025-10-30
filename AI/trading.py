@@ -258,6 +258,12 @@ def execute_buy_sell(rec: dict, account_info: dict) -> dict:
         action = rec.get('action')
         volume = rec.get('volume', 0.01)
 
+        # 打印AI返回的原始交易参数，用于调试
+        sl_points = rec.get('stop_loss_points', 20)
+        tp_points = rec.get('take_profit_points', 30)
+        logger.info(f"🔍 AI返回参数调试: symbol={symbol}, action={action}, stop_loss_points={sl_points}, take_profit_points={tp_points}")
+        logger.info(f"🔍 完整AI返回数据: {json.dumps(rec, ensure_ascii=False)}")
+
         # 计算实时价格
         price_result = calculate_simple_prices(
             symbol=symbol,
@@ -399,6 +405,33 @@ def execute_buy_sell(rec: dict, account_info: dict) -> dict:
         else:
             error_msg = order_result.get('comment', '未知错误') if order_result else '订单发送失败'
             logger.error(f"交易执行失败: {symbol} {action}, 原因: {error_msg}")
+            # 交易失败时打印详细调试信息 - 使用精确计算
+            logger.error(f"🔍 交易失败调试信息:")
+            logger.error(f"  - AI原始止损点数: {sl_points}")
+            logger.error(f"  - AI原始止盈点数: {tp_points}")
+            logger.error(f"  - 计算后止损价格: {price_result.get('stop_loss', 'N/A')}")
+            logger.error(f"  - 计算后止盈价格: {price_result.get('take_profit', 'N/A')}")
+            logger.error(f"  - 最小有效距离要求: {price_result.get('min_effective_distance', 'N/A')}点")
+
+            # 使用精确计算实际止损距离，避免浮点数精度问题
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info and price_result.get('entry_price') and price_result.get('stop_loss'):
+                from decimal import Decimal, getcontext
+                getcontext().prec = 10
+                try:
+                    entry_decimal = Decimal(str(price_result.get('entry_price')))
+                    stop_decimal = Decimal(str(price_result.get('stop_loss')))
+                    point_decimal = Decimal(str(symbol_info.point))
+                    actual_distance = float(abs(entry_decimal - stop_decimal) / point_decimal)
+                    logger.error(f"  - 实际止损距离(精确): {actual_distance:.6f} -> {actual_distance:.1f} 点")
+                except Exception as e:
+                    # 备用计算方法
+                    actual_distance = abs(price_result.get('entry_price', 0) - price_result.get('stop_loss', 0)) / symbol_info.point
+                    logger.error(f"  - 实际止损距离(备用): {actual_distance:.6f} -> {actual_distance:.1f} 点")
+            else:
+                logger.error(f"  - 实际止损距离: 无法计算")
+
+            logger.error(f"  - AI完整返回数据: {json.dumps(rec, ensure_ascii=False)}")
             return {
                 'symbol': symbol,
                 'action': action,

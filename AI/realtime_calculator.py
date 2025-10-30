@@ -6,7 +6,11 @@
 """
 
 import MetaTrader5 as mt5
+from decimal import Decimal, getcontext
 from utils.logger import get_trading_logger
+
+# 设置Decimal精度
+getcontext().prec = 10
 
 
 def calculate_simple_prices(symbol: str, action: str, volume: float,
@@ -120,16 +124,33 @@ def calculate_simple_prices(symbol: str, action: str, volume: float,
             else:
                 take_profit = 0
 
-        # 格式化价格到正确的精度
-        def format_price(price):
+        # 格式化价格到正确的精度 - 使用Decimal避免精度问题
+        def format_price_precise(price):
             if price <= 0:
                 return 0
-            return round(price, digits)
+            # 使用Decimal进行精确的四舍五入，避免浮点数精度问题
+            try:
+                decimal_price = Decimal(str(price))
+                rounded_price = float(round(decimal_price, digits))
+                return rounded_price
+            except:
+                # 备用方案：使用常规round
+                return round(price, digits)
 
-        entry_price = format_price(entry_price)
-        stop_loss = format_price(stop_loss)
-        take_profit = format_price(take_profit)
-        current_price = format_price(current_price)
+        def add_precision_safety_margin(points):
+            """为点数添加精度安全边距，解决19.999999999997797这类问题"""
+            if points <= 0:
+                return points
+            # 如果点数非常接近整数，向上取整并添加小边距
+            rounded = round(points)
+            if abs(points - rounded) < 0.01:  # 0.01点的容差
+                return rounded + 0.1  # 添加0.1点安全边距
+            return points
+
+        entry_price = format_price_precise(entry_price)
+        stop_loss = format_price_precise(stop_loss)
+        take_profit = format_price_precise(take_profit)
+        current_price = format_price_precise(current_price)
 
         result = {
             'success': True,
@@ -145,15 +166,17 @@ def calculate_simple_prices(symbol: str, action: str, volume: float,
             'min_effective_distance': min_effective_distance
         }
 
-        # 验证止损止盈距离
+        # 验证止损止盈距离 - 使用精确计算
         if stop_loss > 0:
-            stop_distance = abs(entry_price - stop_loss) / point_value
-            logger.debug(f"{symbol} 最终止损距离: {stop_distance:.1f} 点 (点差: {spread_points}点, 有效最小距离: {min_effective_distance}点)")
+            stop_distance_raw = abs(entry_price - stop_loss) / point_value
+            stop_distance = add_precision_safety_margin(stop_distance_raw)
+            logger.debug(f"{symbol} 精确止损距离: {stop_distance_raw:.6f} -> {stop_distance:.1f} 点 (点差: {spread_points}点, 有效最小距离: {min_effective_distance}点)")
 
         if take_profit > 0:
-            profit_distance = abs(take_profit - entry_price) / point_value
+            profit_distance_raw = abs(take_profit - entry_price) / point_value
+            profit_distance = add_precision_safety_margin(profit_distance_raw)
             profit_margin = profit_distance - spread_points  # 净利润空间
-            logger.debug(f"{symbol} 最终止盈距离: {profit_distance:.1f} 点 (净利润空间: {profit_margin:.1f}点)")
+            logger.debug(f"{symbol} 精确止盈距离: {profit_distance_raw:.6f} -> {profit_distance:.1f} 点 (净利润空间: {profit_margin:.1f}点)")
 
         logger.debug(f"{symbol} 价格计算完成: 入场={entry_price:.5f}, 止损={stop_loss:.5f}, 止盈={take_profit:.5f}, 点差={spread_points}点")
         return result
