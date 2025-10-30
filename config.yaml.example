@@ -12,11 +12,13 @@ trading:
 forex_pairs:
   # 监控的外汇对列表
   monitored_pairs:
-    - "USDJPYm" # 美元/���元
+    - "USDJPYm" # 美元/日元
     - "USDCHFm" # 美元/瑞士法郎
     - "USDCADm" # 美元/加拿大元
     - "EURUSDm" # 欧元/美元
     - "AUDUSDm"
+    - "GBPUSDm" # 英镑/美元
+    #- "XAUUSDm" # 黄金/美元
 
 # AI配置
 ai:
@@ -34,6 +36,17 @@ ai:
   analysis_interval: 120
   # AI分析失败重试间隔（秒）
   retry_interval: 3
+
+# 止盈监控配置
+monitoring:
+  # 是否启用止盈实时监控
+  enabled: true
+  # 监控检测间隔（秒）
+  interval_seconds: 1
+  # 价格缓存有效期（秒）
+  price_cache_ttl: 0.5
+  # 启动时的信息提示
+  startup_notification: true
 
 # 日志配置
 logging:

@@ -81,45 +81,48 @@ def get_history_orders(
             if magic_number != -1 and deal.magic != magic_number:
                 continue
 
-            # 只处理入场的交易（entry=0），忽略平仓交易（entry=1）
-            if deal.entry != 0:
+            # 直接处理平仓交易 (entry == 1) - 包含完整的盈亏数据
+            if deal.entry != 1:
                 continue
 
-            # 查找对应的平仓交易
-            close_deal = _find_close_deal(deal, history_deals)
+            # 通过position_id找到对应的入场交易
+            entry_deal = _find_entry_deal_by_position_id(deal.position_id, history_deals)
 
-            # 从数据库获取AI决策注释
-            ai_comment = get_order_comment(deal.order)
+            # 如果没有找到入场交易，跳过（但这种情况应该很少见）
+            if not entry_deal:
+                logger.warning(f"平仓交易 {deal.ticket} (position_id={deal.position_id}) 未找到对应的入场交易")
+                continue
+
+            # 从数据库获取AI决策注释（使用入场订单号）
+            ai_comment = get_order_comment(entry_deal.order)
 
             # 计算持仓时间和盈亏点数
-            duration_minutes = 0
-            profit_pips = 0
+            duration_minutes = (deal.time - entry_deal.time) // 60
+            profit_pips = _calculate_profit_pips(entry_deal, deal)
 
-            if close_deal:
-                duration_minutes = (close_deal.time - deal.time) // 60
-                profit_pips = _calculate_profit_pips(deal, close_deal)
-
-            # 确定交易结果
+            # 确定交易结果 - 使用平仓交易的profit
             outcome = "盈利" if deal.profit > 0 else "亏损" if deal.profit < 0 else "持平"
 
             order_dict = {
-                "ticket": deal.order,
+                "ticket": entry_deal.order,  # 使用入场订单号作为主订单号
                 "symbol": deal.symbol,
-                "type": _get_deal_type_name(deal.type),
+                "type": _get_deal_type_name(entry_deal.type),  # 交易类型来自入场
                 "volume": deal.volume,
-                "price_open": deal.price,
-                "price_close": close_deal.price if close_deal else None,
-                "profit": deal.profit,
-                "commission": deal.commission,
-                "swap": deal.swap,
-                "time_setup": deal.time,
-                "time_done": close_deal.time if close_deal else deal.time,
-                "comment": ai_comment if ai_comment else deal.comment,
+                "price_open": entry_deal.price,  # 开仓价格来自入场
+                "price_close": deal.price,       # 平仓价格来自平仓
+                "profit": deal.profit,           # 盈亏来自平仓
+                "commission": deal.commission,   # 手续费来自平仓
+                "swap": deal.swap,              # 库存费来自平仓
+                "time_setup": entry_deal.time,   # 开仓时间来自入场
+                "time_done": deal.time,         # 平仓时间来自平仓
+                "comment": ai_comment if ai_comment else entry_deal.comment,  # 优先使用数据库AI决策
                 "duration_minutes": duration_minutes,
                 "profit_pips": profit_pips,
                 "outcome": outcome,
-                "entry_time_str": datetime.fromtimestamp(deal.time).strftime('%Y-%m-%d %H:%M:%S'),
-                "exit_time_str": datetime.fromtimestamp(close_deal.time).strftime('%Y-%m-%d %H:%M:%S') if close_deal else None
+                "entry_time_str": datetime.fromtimestamp(entry_deal.time).strftime('%Y-%m-%d %H:%M:%S'),
+                "exit_time_str": datetime.fromtimestamp(deal.time).strftime('%Y-%m-%d %H:%M:%S'),
+                "close_ticket": deal.ticket,  # 添加平仓交易号
+                "position_id": deal.position_id  # 添加持仓ID
             }
 
             history_orders.append(order_dict)
@@ -135,24 +138,25 @@ def get_history_orders(
         return None
 
 
-def _find_close_deal(entry_deal, all_deals) -> Optional[Any]:
+def _find_entry_deal_by_position_id(position_id, all_deals) -> Optional[Any]:
     """
-    查找与入场交易对应的平仓交易
+    通过position_id查找对应的入场交易
 
     Args:
-        entry_deal: 入场交易
+        position_id: 持仓ID
         all_deals: 所有交易列表
 
     Returns:
-        Optional[Any]: 平仓交易，如果未找到则返回None
+        Optional[Any]: 入场交易，如果未找到则返回None
     """
     for deal in all_deals:
-        # 查找同一订单的平仓交易（entry=1）
-        if (deal.order == entry_deal.order and
-            deal.entry == 1 and
-            deal.time > entry_deal.time):
+        # 查找同一持仓ID的入场交易（entry=0）
+        if (deal.position_id == position_id and
+            deal.entry == 0):
             return deal
     return None
+
+
 
 
 def _calculate_profit_pips(entry_deal, close_deal) -> float:
